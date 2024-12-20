@@ -11,7 +11,10 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/gin-gonic/gin"
+	"github.com/labstack/echo/v4"
+	"github.com/golang-jwt/jwt/v5"
+	echojwt "github.com/labstack/echo-jwt/v4"
+	"github.com/labstack/echo/v4/middleware"
 )
 
 const (
@@ -23,103 +26,140 @@ type FileInfo struct {
 	Size int64  `json:"size"`
 }
 
+type jwtCustomClaims struct {
+	Name  string `json:"name"`
+	Admin bool   `json:"admin"`
+	jwt.RegisteredClaims
+}
+
 func main() {
-	router := gin.Default()
+	e := echo.New()
 
-	router.POST("/upload", uploadImage)
-	router.GET("/files", getFiles)
-	router.GET("/download/:filename", serveDownload)
+	// Middleware
+	e.Use(middleware.Logger())
+	e.Use(middleware.Recover())
 
+	e.POST("login", login)
+
+	config := echojwt.Config{
+		NewClaimsFunc: func(c echo.Context) jwt.Claims {
+			return new(jwtCustomClaims)
+		},
+		SigningKey: []byte("secret"),
+	}
+
+	r := e.Group("/restricted")
+
+	r.Use(echojwt.WithConfig(config))
+
+	// Routes
+	r.POST("/upload", uploadImage)
+	r.GET("/files", getFiles)
+	r.GET("/download/:filename", serveDownload)
+
+	// Start server
 	port := os.Getenv("PORT")
 	if port == "" {
 		port = "3000"
 	}
-
-	log.Println("Starting server.")
-	log.Fatal(router.Run("0.0.0.0" + ":" + port))
+	log.Printf("Starting server on port %s", port)
+	e.Start("0.0.0.0:" + port)
 }
 
-func getFiles(c *gin.Context) {
-	files, err := listFiles(uploadDir)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Unable to list files"})
-		return
+func login(c echo.Context) error {
+	username := c.FormValue("username")
+	password := c.FormValue("password")
+
+	// Throws unauthorized error
+	if username != os.Getenv("USERNAME") || password != os.Getenv("PASSWORD") {
+		return echo.ErrUnauthorized
 	}
 
-	c.JSON(http.StatusOK, files)
+	// Set custom claims
+	claims := &jwtCustomClaims{
+		"admin",
+		true,
+		jwt.RegisteredClaims{
+			ExpiresAt: jwt.NewNumericDate(time.Now().Add(time.Hour * 72)),
+		},
+	}
+
+	// Create token with claims
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+
+	// Generate encoded token and send it as response.
+	t, err := token.SignedString([]byte("secret"))
+	if err != nil {
+		return err
+	}
+
+	return c.JSON(http.StatusOK, echo.Map{
+		"token": t,
+	})
 }
 
-func uploadImage(c *gin.Context) {
+func uploadImage(c echo.Context) error {
 	// Parse multipart form
-	err := c.Request.ParseMultipartForm(10 << 20) // 10 MB max
+	err := c.Request().ParseMultipartForm(10 << 20) // 10 MB max
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Error parsing multipart form"})
-		return
+		return c.String(http.StatusBadRequest, "Error parsing multipart form")
 	}
 
-	response, err := c.FormFile("image")
+	file, header, err := c.Request().FormFile("image")
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Error retrieving file"})
-		return
-	}
-
-	file, err := response.Open()
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Error retrieving file"})
-		return
+		return c.String(http.StatusBadRequest, "Error retrieving file")
 	}
 	defer file.Close()
 
-	ext := filepath.Ext(response.Filename)
+	ext := filepath.Ext(header.Filename)
 	if ext != ".jpg" && ext != ".jpeg" && ext != ".png" && ext != ".gif" && ext != ".bmp" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Only JPG, JPEG, PNG, GIF, BMP formats are allowed"})
-		return
+		return c.String(http.StatusBadRequest, "Only JPG, JPEG, PNG, GIF, BMP formats are allowed")
 	}
 
 	filename := fmt.Sprintf("image-%s%s", base64.StdEncoding.EncodeToString([]byte(fmt.Sprintf("%d", time.Now().UnixNano()))), ext)
 
 	dst, err := os.Create(filepath.Join(uploadDir, filename))
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Error saving the file"})
-		return
+		return c.String(http.StatusInternalServerError, "Error saving the file")
 	}
 	defer dst.Close()
 
 	if _, err := io.Copy(dst, file); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Error copying file"})
-		return
+		return c.String(http.StatusInternalServerError, "Error copying file")
 	}
 
-	c.JSON(http.StatusOK, gin.H{"message": "Image uploaded successfully", "filename": filename})
+	return c.String(http.StatusOK, fmt.Sprintf("Image uploaded successfully. Filename: %s", filename))
 }
 
-func serveDownload(c *gin.Context) {
+func getFiles(c echo.Context) error {
+	files, err := listFiles(uploadDir)
+	if err != nil {
+		return c.String(http.StatusInternalServerError, "Unable to list files")
+	}
+
+	return c.JSON(http.StatusOK, files)
+}
+
+func serveDownload(c echo.Context) error {
 	filename := c.Param("filename")
 
 	filePath := filepath.Join(uploadDir, filename)
 
 	if _, err := os.Stat(filePath); os.IsNotExist(err) {
-		c.JSON(http.StatusNotFound, gin.H{"error": "File not found"})
-		return
+		return c.String(http.StatusNotFound, "File not found")
 	}
 
-	c.Header("Content-Disposition", fmt.Sprintf("attachment; filename=%s", filepath.Base(filename)))
-	c.Header("Content-Type", getMimeType(filePath))
-	c.File(filePath)
+	c.Response().Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%s", filepath.Base(filename)))
+	c.Response().Header().Set("Content-Type", getMimeType(filePath))
+	return c.File(filePath)
 }
 
 func getMimeType(filePath string) string {
-	// Get the file extension
 	ext := filepath.Ext(filePath)
-
-	// Get the MIME type from the extension
 	mimeType := mime.TypeByExtension(ext)
-
-	// If the MIME type is not found, return a default value
 	if mimeType == "" {
 		return "application/octet-stream"
 	}
-
 	return mimeType
 }
 
