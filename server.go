@@ -63,7 +63,7 @@ func main() {
 		port = "3000"
 	}
 	log.Printf("Starting server on port %s", port)
-	e.Start(":8080")
+	e.Start("0.0.0.0:" + port)
 }
 
 func login(c echo.Context) error {
