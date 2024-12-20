@@ -71,7 +71,7 @@ func login(c echo.Context) error {
 	password := c.FormValue("password")
 
 	// Throws unauthorized error
-	if username != "admin" || password != "admin" {
+	if username != os.Getenv("USERNAME") || password != os.Getenv("PASSWORD") {
 		return echo.ErrUnauthorized
 	}
 
