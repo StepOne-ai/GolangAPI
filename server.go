@@ -11,9 +11,9 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/labstack/echo/v4"
 	"github.com/golang-jwt/jwt/v5"
 	echojwt "github.com/labstack/echo-jwt/v4"
+	"github.com/labstack/echo/v4"
 	"github.com/labstack/echo/v4/middleware"
 )
 
@@ -39,7 +39,7 @@ func main() {
 	e.Use(middleware.Logger())
 	e.Use(middleware.Recover())
 
-	e.POST("login", login)
+	e.POST("/login", login)
 
 	config := echojwt.Config{
 		NewClaimsFunc: func(c echo.Context) jwt.Claims {
@@ -63,7 +63,7 @@ func main() {
 		port = "3000"
 	}
 	log.Printf("Starting server on port %s", port)
-	e.Start("0.0.0.0:" + port)
+	e.Start(":8080")
 }
 
 func login(c echo.Context) error {
@@ -71,7 +71,7 @@ func login(c echo.Context) error {
 	password := c.FormValue("password")
 
 	// Throws unauthorized error
-	if username != os.Getenv("USERNAME") || password != os.Getenv("PASSWORD") {
+	if username != "admin" || password != "admin" {
 		return echo.ErrUnauthorized
 	}
 
@@ -102,39 +102,39 @@ func uploadImage(c echo.Context) error {
 	// Parse multipart form
 	err := c.Request().ParseMultipartForm(10 << 20) // 10 MB max
 	if err != nil {
-		return c.String(http.StatusBadRequest, "Error parsing multipart form")
+		return c.String(http.StatusBadRequest, "Error parsing multipart form\n")
 	}
 
 	file, header, err := c.Request().FormFile("image")
 	if err != nil {
-		return c.String(http.StatusBadRequest, "Error retrieving file")
+		return c.String(http.StatusBadRequest, "Error retrieving file\n")
 	}
 	defer file.Close()
 
 	ext := filepath.Ext(header.Filename)
 	if ext != ".jpg" && ext != ".jpeg" && ext != ".png" && ext != ".gif" && ext != ".bmp" {
-		return c.String(http.StatusBadRequest, "Only JPG, JPEG, PNG, GIF, BMP formats are allowed")
+		return c.String(http.StatusBadRequest, "Only JPG, JPEG, PNG, GIF, BMP formats are allowed\n")
 	}
 
 	filename := fmt.Sprintf("image-%s%s", base64.StdEncoding.EncodeToString([]byte(fmt.Sprintf("%d", time.Now().UnixNano()))), ext)
 
 	dst, err := os.Create(filepath.Join(uploadDir, filename))
 	if err != nil {
-		return c.String(http.StatusInternalServerError, "Error saving the file")
+		return c.String(http.StatusInternalServerError, "Error saving the file\n")
 	}
 	defer dst.Close()
 
 	if _, err := io.Copy(dst, file); err != nil {
-		return c.String(http.StatusInternalServerError, "Error copying file")
+		return c.String(http.StatusInternalServerError, "Error copying file\n")
 	}
 
-	return c.String(http.StatusOK, fmt.Sprintf("Image uploaded successfully. Filename: %s", filename))
+	return c.String(http.StatusOK, fmt.Sprintf("Image uploaded successfully. Filename: %s\n", filename))
 }
 
 func getFiles(c echo.Context) error {
 	files, err := listFiles(uploadDir)
 	if err != nil {
-		return c.String(http.StatusInternalServerError, "Unable to list files")
+		return c.String(http.StatusInternalServerError, "Unable to list files\n")
 	}
 
 	return c.JSON(http.StatusOK, files)
@@ -146,7 +146,7 @@ func serveDownload(c echo.Context) error {
 	filePath := filepath.Join(uploadDir, filename)
 
 	if _, err := os.Stat(filePath); os.IsNotExist(err) {
-		return c.String(http.StatusNotFound, "File not found")
+		return c.String(http.StatusNotFound, "File not found\n")
 	}
 
 	c.Response().Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%s", filepath.Base(filename)))
