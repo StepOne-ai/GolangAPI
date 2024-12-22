@@ -1,2 +1,3 @@
-curl -X GET -H "Content-Type: application/json" -H "Authorization: Bearer TOKEN" https://golangapi-production-2290.up.railway.app/restricted/files
-curl -X POST -H "Content-Type: application/json" -H "Authorization: Bearer TOKEN" -F "image=someimg.jpg" https://golangapi-production-2290.up.railway.app/restricted/upload 
+curl -X POST -H "Content-Type: multipart/form-data" -d "username=USERNAME" -d "password=PASSWORD" https://golangapi-production-2290.up.railway.app/login
+curl -X GET -H "Content-Type: multipart/form-data" -H "Authorization: Bearer TOKEN" https://golangapi-production-2290.up.railway.app/restricted/files
+curl -X POST -H "Content-Type: multipart/form-data" -H "Authorization: Bearer TOKEN" -F "image=someimg.jpg" https://golangapi-production-2290.up.railway.app/restricted/upload 

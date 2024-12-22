@@ -63,15 +63,17 @@ func main() {
 		port = "3000"
 	}
 	log.Printf("Starting server on port %s", port)
-	e.Start(":8080")
+	e.Start(os.Getenv("IP") + ":" + port)
 }
 
 func login(c echo.Context) error {
 	username := c.FormValue("username")
 	password := c.FormValue("password")
+	
+	fmt.Print(os.Getenv("USERNAME") + " " + username)
 
 	// Throws unauthorized error
-	if username != "admin" || password != "admin" {
+	if username != os.Getenv("USERNAME") || password != os.Getenv("PASSWORD") {
 		return echo.ErrUnauthorized
 	}
 
